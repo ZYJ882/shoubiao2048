@@ -22,7 +22,7 @@
 | 语言 | Kotlin |
 | UI | Jetpack Compose for Wear OS Material |
 | 存储 | Jetpack DataStore Preferences |
-| 最低系统 | Wear OS 3（API 30）且使用 ARM64（`arm64-v8a`）的设备 |
+| 最低系统 | Wear OS 3（API 30）且使用 ARM64（`arm64-v8a`）或 32 位 ARM（`armeabi-v7a`）的设备 |
 | 包名 | `com.shoubiao2048.app` |
 
 项目刻意避免加载远程资源、后台任务、自定义字体和持续动画。每次有效滑动仅处理固定的 16 个格子，并保存一个小型本地快照。
@@ -37,7 +37,7 @@
 
 ### 获取 release APK
 
-仓库的 **Actions** 页面提供手动触发的 `Build release APK` 工作流。该工作流使用固定版本的 Gradle、稳定 Android API 35 工具链与 JDK 17 构建 `assembleRelease`，并上传名为 `shoubiao2048-release-apk` 的 APK 构件。release 变体启用 R8 与资源压缩，并仅打包 `arm64-v8a` 原生库以缩小现代手表上的下载与安装体积。该 APK 不适用于 32 位 Wear OS 设备。本次自动构建会使用临时签名密钥，因此适合首次安装与测试；在长期分发或升级前，请替换为受控的持久发布签名密钥。
+仓库的 **Actions** 页面提供手动触发的 `Build release APK` 工作流。该工作流使用固定版本的 Gradle、稳定 Android API 35 工具链与 JDK 17 构建 `assembleRelease`，并上传名为 `shoubiao2048-release-apk` 的 APK 构件。release 变体启用 R8 与资源压缩，且仅打包 `arm64-v8a` 与 `armeabi-v7a` 原生库，以兼顾现代及 32 位 Wear OS 手表。工作流从 GitHub Actions 加密机密恢复同一套固定签名；以此签名构建的后续版本可正常覆盖升级。
 
 ## 项目结构
 
