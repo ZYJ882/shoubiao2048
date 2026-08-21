@@ -88,19 +88,23 @@ fun Wrist2048Screen() {
             if (!moved.moved) return
             val cells = GameEngine.addRandomTile(moved.cells)
             val score = game.score + moved.scoreDelta
+            val bestScore = maxOf(game.bestScore, score)
+            val hasAcknowledgedWin = game.hasAcknowledgedWin
+            
             val next = GameSnapshot(
                 cells = cells,
                 score = score,
-                bestScore = maxOf(game.bestScore, score),
-                hasAcknowledgedWin = game.hasAcknowledgedWin,
+                bestScore = bestScore,
+                hasAcknowledgedWin = hasAcknowledgedWin,
             )
             previous = game
             game = next
             save(next)
-            dialog = when {
-                !game.hasAcknowledgedWin && GameEngine.hasTargetTile(cells) -> DialogKind.WON
-                !GameEngine.canMove(cells) -> DialogKind.OVER
-                else -> null
+            
+            if (!hasAcknowledgedWin && GameEngine.hasTargetTile(cells)) {
+                dialog = DialogKind.WON
+            } else if (!GameEngine.canMove(cells)) {
+                dialog = DialogKind.OVER
             }
         }
 
@@ -203,7 +207,7 @@ private fun ScoreBox(label: String, score: Int) {
 }
 
 @Composable
-private fun GameBoard(cells: List<Int>, modifier: Modifier, onMove: (Direction) -> Unit) {
+private fun GameBoard(cells: IntArray, modifier: Modifier, onMove: (Direction) -> Unit) {
     var dragX by remember { mutableStateOf(0f) }
     var dragY by remember { mutableStateOf(0f) }
     BoxWithConstraints(
@@ -217,7 +221,7 @@ private fun GameBoard(cells: List<Int>, modifier: Modifier, onMove: (Direction) 
                 .clip(RoundedCornerShape(13.dp))
                 .background(AppColors.Board)
                 .padding(5.dp)
-                .pointerInput(cells) {
+                .pointerInput(Unit) {
                     detectDragGestures(
                         onDragStart = {
                             dragX = 0f

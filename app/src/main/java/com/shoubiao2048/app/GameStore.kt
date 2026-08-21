@@ -33,7 +33,7 @@ object GameSnapshotCodec {
     fun decode(raw: String): GameSnapshot? = runCatching {
         val parts = raw.split("|")
         if (parts.size != 4) return null
-        val cells = parts[3].split(",").map { it.toInt() }
+        val cells = parts[3].split(",").map { it.toInt() }.toIntArray()
         if (cells.size != BOARD_SIDE * BOARD_SIDE || cells.any { it < 0 }) return null
         GameSnapshot(
             cells = cells,

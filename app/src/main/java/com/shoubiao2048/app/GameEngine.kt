@@ -8,7 +8,7 @@ private const val CELL_COUNT = BOARD_SIDE * BOARD_SIDE
 enum class Direction { UP, DOWN, LEFT, RIGHT }
 
 data class GameSnapshot(
-    val cells: List<Int>,
+    val cells: IntArray,
     val score: Int,
     val bestScore: Int,
     val hasAcknowledgedWin: Boolean = false,
@@ -19,69 +19,132 @@ data class GameSnapshot(
 }
 
 data class MoveResult(
-    val cells: List<Int>,
+    val cells: IntArray,
     val scoreDelta: Int,
     val moved: Boolean,
 )
 
 object GameEngine {
+    private val lineIndexesCache = Array(4) { Array<List<Int>?>(4) { null } }
+    
     fun newGame(bestScore: Int = 0, random: Random = Random.Default): GameSnapshot {
-        val first = addRandomTile(List(CELL_COUNT) { 0 }, random)
+        val first = addRandomTile(IntArray(CELL_COUNT), random)
         return GameSnapshot(addRandomTile(first, random), score = 0, bestScore = bestScore)
     }
 
-    fun addRandomTile(cells: List<Int>, random: Random = Random.Default): List<Int> {
-        val emptyCells = cells.indices.filter { cells[it] == 0 }
-        if (emptyCells.isEmpty()) return cells
-        val target = emptyCells[random.nextInt(emptyCells.size)]
-        return cells.toMutableList().also { it[target] = if (random.nextInt(10) == 0) 4 else 2 }
-    }
-
-    fun move(cells: List<Int>, direction: Direction): MoveResult {
-        val result = MutableList(CELL_COUNT) { 0 }
-        var scoreDelta = 0
-
-        repeat(BOARD_SIDE) { line ->
-            val indexes = lineIndexes(direction, line)
-            val compacted = indexes.map { cells[it] }.filter { it != 0 }
-            val merged = mutableListOf<Int>()
-            var position = 0
-            while (position < compacted.size) {
-                val current = compacted[position]
-                if (position + 1 < compacted.size && current == compacted[position + 1]) {
-                    val value = current * 2
-                    merged += value
-                    scoreDelta += value
-                    position += 2
-                } else {
-                    merged += current
-                    position += 1
+    fun addRandomTile(cells: IntArray, random: Random = Random.Default): IntArray {
+        var emptyCount = 0
+        for (i in cells.indices) {
+            if (cells[i] == 0) emptyCount++
+        }
+        if (emptyCount == 0) return cells
+        
+        val targetIndex = if (emptyCount == 1) {
+            cells.indexOfFirst { it == 0 }
+        } else {
+            var count = 0
+            var target = -1
+            val rand = random.nextInt(emptyCount)
+            for (i in cells.indices) {
+                if (cells[i] == 0) {
+                    if (count == rand) {
+                        target = i
+                        break
+                    }
+                    count++
                 }
             }
-            indexes.forEachIndexed { positionInLine, cellIndex ->
-                result[cellIndex] = merged.getOrElse(positionInLine) { 0 }
-            }
+            target
         }
-        return MoveResult(result, scoreDelta, result != cells)
+        
+        return cells.copyOf().apply { 
+            this[targetIndex] = if (random.nextInt(10) == 0) 4 else 2 
+        }
     }
 
-    fun canMove(cells: List<Int>): Boolean {
-        if (cells.any { it == 0 }) return true
-        for (row in 0 until BOARD_SIDE) {
-            for (column in 0 until BOARD_SIDE) {
-                val index = row * BOARD_SIDE + column
-                val value = cells[index]
-                if (column < BOARD_SIDE - 1 && value == cells[index + 1]) return true
-                if (row < BOARD_SIDE - 1 && value == cells[index + BOARD_SIDE]) return true
+    fun move(cells: IntArray, direction: Direction): MoveResult {
+        val result = IntArray(CELL_COUNT)
+        var scoreDelta = 0
+
+        for (line in 0 until BOARD_SIDE) {
+            val indexes = getLineIndexes(direction, line)
+            
+            // Compact and merge in one pass
+            var writePos = 0
+            var lastValue = 0
+            var canMerge = false
+            
+            for (offset in indexes.indices) {
+                val cellIndex = indexes[offset]
+                val value = cells[cellIndex]
+                if (value == 0) continue
+                
+                if (canMerge && lastValue == value) {
+                    val merged = value * 2
+                    result[indexes[writePos - 1]] = merged
+                    scoreDelta += merged
+                    canMerge = false
+                } else {
+                    result[indexes[writePos]] = value
+                    lastValue = value
+                    writePos++
+                    canMerge = true
+                }
             }
+            
+            // Fill remaining with zeros
+            for (i in writePos until BOARD_SIDE) {
+                result[indexes[i]] = 0
+            }
+        }
+        
+        val moved = !cells.contentEquals(result)
+        return MoveResult(result, scoreDelta, moved)
+    }
+
+    fun canMove(cells: IntArray): Boolean {
+        // Check for empty cells first (fast path)
+        for (cell in cells) {
+            if (cell == 0) return true
+        }
+        
+        // Check adjacent cells
+        for (row in 0 until BOARD_SIDE) {
+            for (column in 0 until BOARD_SIDE - 1) {
+                val index = row * BOARD_SIDE + column
+                if (cells[index] == cells[index + 1]) return true
+            }
+        }
+        
+        for (column in 0 until BOARD_SIDE) {
+            for (row in 0 until BOARD_SIDE - 1) {
+                val index = row * BOARD_SIDE + column
+                if (cells[index] == cells[index + BOARD_SIDE]) return true
+            }
+        }
+        
+        return false
+    }
+
+    fun hasTargetTile(cells: IntArray): Boolean {
+        for (cell in cells) {
+            if (cell >= 2048) return true
         }
         return false
     }
 
-    fun hasTargetTile(cells: List<Int>): Boolean = cells.any { it >= 2048 }
-
-    private fun lineIndexes(direction: Direction, line: Int): List<Int> = List(BOARD_SIDE) { offset ->
-        val position = if (direction == Direction.RIGHT || direction == Direction.DOWN) BOARD_SIDE - 1 - offset else offset
-        if (direction == Direction.LEFT || direction == Direction.RIGHT) line * BOARD_SIDE + position else position * BOARD_SIDE + line
+    private fun getLineIndexes(direction: Direction, line: Int): List<Int> {
+        val dirOrdinal = direction.ordinal
+        val cached = lineIndexesCache[dirOrdinal][line]
+        if (cached != null) return cached
+        
+        val indexes = List(BOARD_SIDE) { offset ->
+            val position = if (direction == Direction.RIGHT || direction == Direction.DOWN) 
+                BOARD_SIDE - 1 - offset else offset
+            if (direction == Direction.LEFT || direction == Direction.RIGHT) 
+                line * BOARD_SIDE + position else position * BOARD_SIDE + line
+        }
+        lineIndexesCache[dirOrdinal][line] = indexes
+        return indexes
     }
 }
