@@ -52,8 +52,12 @@ private object AppColors {
     val Ink = Color(0xFFFFF8E7)
     val Muted = Color(0xFFC8BFB1)
     val Accent = Color(0xFFF4B942)
-    val Outline = Color(0xFF74695D)
 }
+
+private val BoardShape = RoundedCornerShape(13.dp)
+private val TileShape = RoundedCornerShape(6.dp)
+private val CardShape = RoundedCornerShape(7.dp)
+private val DialogShape = RoundedCornerShape(16.dp)
 
 private enum class DialogKind { RESTART, WON, OVER }
 
@@ -196,7 +200,7 @@ private fun Header(game: GameSnapshot) {
 private fun ScoreBox(label: String, score: Int) {
     Column(
         modifier = Modifier
-            .clip(RoundedCornerShape(7.dp))
+            .clip(CardShape)
             .background(AppColors.Board)
             .padding(horizontal = 7.dp, vertical = 3.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -208,8 +212,7 @@ private fun ScoreBox(label: String, score: Int) {
 
 @Composable
 private fun GameBoard(cells: IntArray, modifier: Modifier, onMove: (Direction) -> Unit) {
-    var dragX by remember { mutableStateOf(0f) }
-    var dragY by remember { mutableStateOf(0f) }
+    val dragOffset = remember { FloatArray(2) }
     BoxWithConstraints(
         modifier = modifier.fillMaxWidth(),
         contentAlignment = Alignment.Center,
@@ -218,22 +221,22 @@ private fun GameBoard(cells: IntArray, modifier: Modifier, onMove: (Direction) -
         Column(
             modifier = Modifier
                 .size(boardSide)
-                .clip(RoundedCornerShape(13.dp))
+                .clip(BoardShape)
                 .background(AppColors.Board)
                 .padding(5.dp)
                 .pointerInput(Unit) {
                     detectDragGestures(
                         onDragStart = {
-                            dragX = 0f
-                            dragY = 0f
+                            dragOffset[0] = 0f
+                            dragOffset[1] = 0f
                         },
                         onDrag = { change, amount ->
                             change.consume()
-                            dragX += amount.x
-                            dragY += amount.y
+                            dragOffset[0] += amount.x
+                            dragOffset[1] += amount.y
                         },
                         onDragEnd = {
-                            val direction = swipeDirection(dragX, dragY)
+                            val direction = swipeDirection(dragOffset[0], dragOffset[1])
                             if (direction != null) onMove(direction)
                         },
                     )
@@ -262,7 +265,7 @@ private fun Tile(value: Int, modifier: Modifier) {
     Box(
         modifier = modifier
             .aspectRatio(1f)
-            .clip(RoundedCornerShape(6.dp))
+            .clip(TileShape)
             .background(tileColor(value)),
         contentAlignment = Alignment.Center,
     ) {
@@ -353,7 +356,7 @@ private fun GameDialog(
     ) {
         Column(
             modifier = Modifier
-                .clip(RoundedCornerShape(16.dp))
+                .clip(DialogShape)
                 .background(AppColors.Board)
                 .padding(18.dp),
             horizontalAlignment = Alignment.CenterHorizontally,

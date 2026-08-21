@@ -25,7 +25,22 @@ data class MoveResult(
 )
 
 object GameEngine {
-    private val lineIndexesCache = Array(4) { Array<List<Int>?>(4) { null } }
+    private val lineIndexes = Array(Direction.entries.size * BOARD_SIDE) { slot ->
+        val direction = Direction.entries[slot / BOARD_SIDE]
+        val line = slot % BOARD_SIDE
+        IntArray(BOARD_SIDE) { offset ->
+            val position = if (direction == Direction.RIGHT || direction == Direction.DOWN) {
+                BOARD_SIDE - 1 - offset
+            } else {
+                offset
+            }
+            if (direction == Direction.LEFT || direction == Direction.RIGHT) {
+                line * BOARD_SIDE + position
+            } else {
+                position * BOARD_SIDE + line
+            }
+        }
+    }
     
     fun newGame(bestScore: Int = 0, random: Random = Random.Default): GameSnapshot {
         val first = addRandomTile(IntArray(CELL_COUNT), random)
@@ -39,22 +54,15 @@ object GameEngine {
         }
         if (emptyCount == 0) return cells
         
-        val targetIndex = if (emptyCount == 1) {
-            cells.indexOfFirst { it == 0 }
-        } else {
-            var count = 0
-            var target = -1
-            val rand = random.nextInt(emptyCount)
-            for (i in cells.indices) {
-                if (cells[i] == 0) {
-                    if (count == rand) {
-                        target = i
-                        break
-                    }
-                    count++
-                }
+        var remaining = random.nextInt(emptyCount)
+        var targetIndex = 0
+        for (index in cells.indices) {
+            if (cells[index] != 0) continue
+            if (remaining == 0) {
+                targetIndex = index
+                break
             }
-            target
+            remaining--
         }
         
         return cells.copyOf().apply { 
@@ -67,7 +75,7 @@ object GameEngine {
         var scoreDelta = 0
 
         for (line in 0 until BOARD_SIDE) {
-            val indexes = getLineIndexes(direction, line)
+            val indexes = lineIndexes[direction.ordinal * BOARD_SIDE + line]
             
             // Compact and merge in one pass
             var writePos = 0
@@ -133,18 +141,4 @@ object GameEngine {
         return false
     }
 
-    private fun getLineIndexes(direction: Direction, line: Int): List<Int> {
-        val dirOrdinal = direction.ordinal
-        val cached = lineIndexesCache[dirOrdinal][line]
-        if (cached != null) return cached
-        
-        val indexes = List(BOARD_SIDE) { offset ->
-            val position = if (direction == Direction.RIGHT || direction == Direction.DOWN) 
-                BOARD_SIDE - 1 - offset else offset
-            if (direction == Direction.LEFT || direction == Direction.RIGHT) 
-                line * BOARD_SIDE + position else position * BOARD_SIDE + line
-        }
-        lineIndexesCache[dirOrdinal][line] = indexes
-        return indexes
-    }
 }
