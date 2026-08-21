@@ -20,7 +20,7 @@
 | 项目 | 选择 |
 | --- | --- |
 | 语言 | Kotlin |
-| UI | Jetpack Compose for Wear OS Material 3 |
+| UI | Jetpack Compose for Wear OS Material |
 | 存储 | Jetpack DataStore Preferences |
 | 最低系统 | Wear OS 3（API 30） |
 | 包名 | `com.shoubiao2048.app` |

@@ -40,10 +40,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.wear.compose.material3.Button
-import androidx.wear.compose.material3.ButtonDefaults
-import androidx.wear.compose.material3.MaterialTheme
-import androidx.wear.compose.material3.Text
+import androidx.wear.compose.material.Button
+import androidx.wear.compose.material.ButtonDefaults
+import androidx.wear.compose.material.MaterialTheme
+import androidx.wear.compose.material.Text
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 
@@ -317,7 +317,7 @@ private fun GameButton(
         enabled = enabled,
         modifier = modifier.height(42.dp),
         colors = ButtonDefaults.buttonColors(
-            containerColor = if (emphasized) AppColors.Accent else AppColors.Board,
+            backgroundColor = if (emphasized) AppColors.Accent else AppColors.Board,
             contentColor = if (emphasized) Color(0xFF312B26) else AppColors.Ink,
         ),
     ) {
