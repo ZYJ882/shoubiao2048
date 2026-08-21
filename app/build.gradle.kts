@@ -17,10 +17,23 @@ android {
         applicationId = "com.shoubiao2048.app"
         minSdk = 30
         targetSdk = 35
-        versionCode = 2
+        versionCode = 3
         versionName = "1.1.0"
-        ndk {
-            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+    }
+
+    flavorDimensions += "abi"
+    productFlavors {
+        create("arm64") {
+            dimension = "abi"
+            ndk { abiFilters += "arm64-v8a" }
+        }
+        create("arm32") {
+            dimension = "abi"
+            ndk { abiFilters += "armeabi-v7a" }
+        }
+        create("universal") {
+            dimension = "abi"
+            ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
         }
     }
 

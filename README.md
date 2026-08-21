@@ -37,7 +37,7 @@
 
 ### 获取 release APK
 
-仓库的 **Actions** 页面提供手动触发的 `Build release APK` 工作流。该工作流使用固定版本的 Gradle、稳定 Android API 35 工具链与 JDK 17 构建 `assembleRelease`，并上传名为 `shoubiao2048-release-apk` 的 APK 构件。release 变体启用 R8 与资源压缩，且仅打包 `arm64-v8a` 与 `armeabi-v7a` 原生库，以兼顾现代及 32 位 Wear OS 手表。工作流从 GitHub Actions 加密机密恢复同一套固定签名；以此签名构建的后续版本可正常覆盖升级。
+仓库的 **Actions** 页面提供手动触发的 `Build release APK` 工作流。该工作流使用固定版本的 Gradle、稳定 Android API 35 工具链与 JDK 17 分别构建三个 release 变体：`shoubiao2048-arm64-apk`（ARM64 专用）、`shoubiao2048-arm32-apk`（32 位 ARM 专用）与 `shoubiao2048-universal-apk`（双 ABI 通用版）。release 变体启用 R8 与资源压缩。工作流从 GitHub Actions 加密机密恢复同一套固定签名；以此签名构建的后续版本可正常覆盖升级。
 
 ## 项目结构
 
