@@ -1,15 +1,34 @@
-```
-# Compiled and build artifacts
+# Android Studio and IntelliJ files
+.idea/
+*.iml
+
+# Gradle build output and local configuration
+.gradle/
+build/
+app/build/
+local.properties
+
+# Native build, profiling and temporary artifacts
+.externalNativeBuild/
+.cxx/
+captures/
 *.class
 *.o
 *.obj
 *.out
-build/
-# Dependencies
-.gradle/
-# Logs and temp files
 *.log
 *.tmp
-# Editors
-.idea/
-```
+
+# Signing material and generated Android packages
+*.jks
+*.keystore
+key.properties
+release.keystore
+*.apk
+*.aab
+
+# Environment and operating system files
+.env
+.env.*
+.DS_Store
+Thumbs.db

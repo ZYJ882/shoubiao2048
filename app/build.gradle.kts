@@ -17,8 +17,8 @@ android {
         applicationId = "com.shoubiao2048.app"
         minSdk = 30
         targetSdk = 35
-        versionCode = 4
-        versionName = "1.2.0"
+        versionCode = 5
+        versionName = "1.2.1"
     }
 
     flavorDimensions += "abi"

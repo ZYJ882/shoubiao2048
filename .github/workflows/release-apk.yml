@@ -26,6 +26,9 @@ jobs:
         with:
           gradle-version: "8.10.2"
 
+      - name: Run JVM unit tests
+        run: gradle --no-daemon test
+
       - name: Restore fixed release signing key
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}

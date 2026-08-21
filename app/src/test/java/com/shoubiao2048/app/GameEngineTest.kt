@@ -2,6 +2,7 @@ package com.shoubiao2048.app
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -31,6 +32,20 @@ class GameEngineTest {
     @Test
     fun `snapshot codec retains a valid local save`() {
         val snapshot = GameSnapshot(intArrayOf(*List(16) { if (it == 0) 2 else 0 }.toIntArray()), 12, 64, true)
-        assertEquals(snapshot, GameSnapshotCodec.decode(GameSnapshotCodec.encode(snapshot)))
+        val restored = GameSnapshotCodec.decode(GameSnapshotCodec.encode(snapshot))
+        requireNotNull(restored)
+        assertTrue(snapshot.cells.contentEquals(restored.cells))
+        assertEquals(snapshot.score, restored.score)
+        assertEquals(snapshot.bestScore, restored.bestScore)
+        assertEquals(snapshot.hasAcknowledgedWin, restored.hasAcknowledgedWin)
+    }
+
+    @Test
+    fun `snapshot codec rejects malformed or unsafe persisted state`() {
+        assertNull(GameSnapshotCodec.decode("0|0|false|2,2,2"))
+        assertNull(GameSnapshotCodec.decode("0|0|false|3,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0"))
+        assertNull(GameSnapshotCodec.decode("-1|0|false|2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0"))
+        assertNull(GameSnapshotCodec.decode("10|5|false|2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0"))
+        assertNull(GameSnapshotCodec.decode("0|0|false|" + "2,".repeat(300)))
     }
 }
