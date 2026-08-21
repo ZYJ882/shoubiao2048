@@ -6,7 +6,7 @@ plugins {
 
 android {
     namespace = "com.shoubiao2048.app"
-    compileSdk = 36
+    compileSdk = 35
 
     val keystorePath = System.getenv("KEYSTORE_FILE")
     val keystorePassword = System.getenv("KEYSTORE_PASSWORD")
@@ -16,7 +16,7 @@ android {
     defaultConfig {
         applicationId = "com.shoubiao2048.app"
         minSdk = 30
-        targetSdk = 36
+        targetSdk = 35
         versionCode = 1
         versionName = "1.0.0"
     }
@@ -51,13 +51,13 @@ android {
 }
 
 dependencies {
-    implementation(platform("androidx.compose:compose-bom:2026.08.00"))
-    implementation("androidx.activity:activity-compose:1.13.0")
+    implementation(platform("androidx.compose:compose-bom:2024.09.00"))
+    implementation("androidx.activity:activity-compose:1.9.2")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
-    implementation("androidx.wear.compose:compose-material3:1.6.2")
-    implementation("androidx.wear.compose:compose-foundation:1.6.2")
-    implementation("androidx.datastore:datastore-preferences:1.1.2")
+    implementation("androidx.wear.compose:compose-material3:1.3.1")
+    implementation("androidx.wear.compose:compose-foundation:1.3.1")
+    implementation("androidx.datastore:datastore-preferences:1.1.1")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
     testImplementation("junit:junit:4.13.2")
