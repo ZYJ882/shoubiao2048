@@ -24,6 +24,19 @@ class GameEngineTest {
     }
 
     @Test
+    fun `captured tile motions preserve merge sources and target`() {
+        val result = GameEngine.move(
+            intArrayOf(0, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+            Direction.LEFT,
+            captureMotions = true,
+        )
+
+        assertEquals(2, result.motions.size)
+        assertTrue(result.motions.all { it.merges && it.value == 2 && it.toIndex == 0 })
+        assertEquals(setOf(1, 2), result.motions.map { it.fromIndex }.toSet())
+    }
+
+    @Test
     fun `locked board has no valid moves`() {
         val board = intArrayOf(2, 4, 2, 4, 4, 2, 4, 2, 2, 4, 2, 4, 4, 2, 4, 2)
         assertFalse(GameEngine.canMove(board))

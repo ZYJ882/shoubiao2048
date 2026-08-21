@@ -18,10 +18,18 @@ data class GameSnapshot(
     }
 }
 
+data class TileMotion(
+    val value: Int,
+    val fromIndex: Int,
+    val toIndex: Int,
+    val merges: Boolean,
+)
+
 data class MoveResult(
     val cells: IntArray,
     val scoreDelta: Int,
     val moved: Boolean,
+    val motions: Array<TileMotion> = emptyArray(),
 )
 
 object GameEngine {
@@ -70,8 +78,14 @@ object GameEngine {
         }
     }
 
-    fun move(cells: IntArray, direction: Direction): MoveResult {
+    fun move(
+        cells: IntArray,
+        direction: Direction,
+        captureMotions: Boolean = false,
+    ): MoveResult {
         val result = IntArray(CELL_COUNT)
+        val capturedMotions = if (captureMotions) arrayOfNulls<TileMotion>(CELL_COUNT) else null
+        var motionCount = 0
         var scoreDelta = 0
 
         for (line in 0 until BOARD_SIDE) {
@@ -81,6 +95,8 @@ object GameEngine {
             var writePos = 0
             var lastValue = 0
             var canMerge = false
+            var pendingSource = -1
+            var pendingTarget = -1
             
             for (offset in indexes.indices) {
                 val cellIndex = indexes[offset]
@@ -89,15 +105,30 @@ object GameEngine {
                 
                 if (canMerge && lastValue == value) {
                     val merged = value * 2
-                    result[indexes[writePos - 1]] = merged
+                    result[pendingTarget] = merged
                     scoreDelta += merged
+                    if (capturedMotions != null) {
+                        capturedMotions[motionCount++] = TileMotion(value, pendingSource, pendingTarget, merges = true)
+                        capturedMotions[motionCount++] = TileMotion(value, cellIndex, pendingTarget, merges = true)
+                    }
                     canMerge = false
+                    pendingSource = -1
                 } else {
-                    result[indexes[writePos]] = value
+                    if (canMerge && pendingSource != pendingTarget && capturedMotions != null) {
+                        capturedMotions[motionCount++] = TileMotion(lastValue, pendingSource, pendingTarget, merges = false)
+                    }
+
+                    pendingTarget = indexes[writePos]
+                    result[pendingTarget] = value
                     lastValue = value
+                    pendingSource = cellIndex
                     writePos++
                     canMerge = true
                 }
+            }
+
+            if (canMerge && pendingSource != pendingTarget && capturedMotions != null) {
+                capturedMotions[motionCount++] = TileMotion(lastValue, pendingSource, pendingTarget, merges = false)
             }
             
             // Fill remaining with zeros
@@ -107,7 +138,12 @@ object GameEngine {
         }
         
         val moved = !cells.contentEquals(result)
-        return MoveResult(result, scoreDelta, moved)
+        val motions = if (capturedMotions == null || motionCount == 0) {
+            emptyArray()
+        } else {
+            Array(motionCount) { capturedMotions[it]!! }
+        }
+        return MoveResult(result, scoreDelta, moved, motions)
     }
 
     fun canMove(cells: IntArray): Boolean {

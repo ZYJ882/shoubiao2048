@@ -1,6 +1,10 @@
 package com.shoubiao2048.app
 
 import android.content.res.Configuration
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateIntAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -14,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -29,6 +34,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
@@ -42,6 +48,7 @@ import androidx.wear.compose.material.Button
 import androidx.wear.compose.material.ButtonDefaults
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Text
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 
@@ -58,8 +65,22 @@ private val BoardShape = RoundedCornerShape(13.dp)
 private val TileShape = RoundedCornerShape(6.dp)
 private val CardShape = RoundedCornerShape(7.dp)
 private val DialogShape = RoundedCornerShape(16.dp)
+private const val TILE_MOTION_DURATION_MS = 148
+private const val TILE_SETTLE_DELAY_MS = 160L
+private val BoardPadding = 5.dp
+private val BoardGap = 5.dp
 
 private enum class DialogKind { RESTART, WON, OVER }
+
+private data class MergePulse(val value: Int, val targetIndex: Int)
+
+private data class BoardAnimation(
+    val id: Int,
+    val cellsAfterMove: IntArray,
+    val motions: Array<TileMotion>,
+    val mergePulses: Array<MergePulse>,
+    val spawnedIndex: Int,
+)
 
 @Composable
 fun Wrist2048Screen() {
@@ -69,9 +90,23 @@ fun Wrist2048Screen() {
         var game by remember { mutableStateOf(GameEngine.newGame()) }
         var previous by remember { mutableStateOf<GameSnapshot?>(null) }
         var dialog by remember { mutableStateOf<DialogKind?>(null) }
+        var pendingDialog by remember { mutableStateOf<DialogKind?>(null) }
+        var boardAnimation by remember { mutableStateOf<BoardAnimation?>(null) }
+        var animationId by remember { mutableStateOf(0) }
 
         LaunchedEffect(Unit) {
             GameStore.load(context)?.let { game = it }
+        }
+
+        LaunchedEffect(boardAnimation?.id) {
+            if (boardAnimation != null) {
+                delay(TILE_SETTLE_DELAY_MS)
+                boardAnimation = null
+                pendingDialog?.let { nextDialog ->
+                    dialog = nextDialog
+                    pendingDialog = null
+                }
+            }
         }
 
         fun save(snapshot: GameSnapshot) {
@@ -83,12 +118,14 @@ fun Wrist2048Screen() {
             game = next
             previous = null
             dialog = null
+            pendingDialog = null
+            boardAnimation = null
             save(next)
         }
 
         fun move(direction: Direction) {
-            if (dialog != null) return
-            val moved = GameEngine.move(game.cells, direction)
+            if (dialog != null || boardAnimation != null) return
+            val moved = GameEngine.move(game.cells, direction, captureMotions = true)
             if (!moved.moved) return
             val cells = GameEngine.addRandomTile(moved.cells)
             val score = game.score + moved.scoreDelta
@@ -103,13 +140,21 @@ fun Wrist2048Screen() {
             )
             previous = game
             game = next
+            animationId++
+            boardAnimation = BoardAnimation(
+                id = animationId,
+                cellsAfterMove = moved.cells,
+                motions = moved.motions,
+                mergePulses = mergePulses(moved.motions),
+                spawnedIndex = findSpawnedIndex(moved.cells, cells),
+            )
             save(next)
             
-            if (!hasAcknowledgedWin && GameEngine.hasTargetTile(cells)) {
-                dialog = DialogKind.WON
+            pendingDialog = if (!hasAcknowledgedWin && GameEngine.hasTargetTile(cells)) {
+                DialogKind.WON
             } else if (!GameEngine.canMove(cells)) {
-                dialog = DialogKind.OVER
-            }
+                DialogKind.OVER
+            } else null
         }
 
         val configuration = LocalConfiguration.current
@@ -130,6 +175,7 @@ fun Wrist2048Screen() {
                 Spacer(Modifier.height(7.dp))
                 GameBoard(
                     cells = game.cells,
+                    animation = boardAnimation,
                     modifier = Modifier.weight(1f),
                     onMove = ::move,
                 )
@@ -140,18 +186,21 @@ fun Wrist2048Screen() {
                 ) {
                     GameButton(
                         label = "撤销",
-                        enabled = previous != null && dialog == null,
+                        enabled = previous != null && dialog == null && boardAnimation == null,
                         modifier = Modifier.weight(1f),
                         onClick = {
                             previous?.let { restored ->
                                 game = restored
                                 previous = null
+                                pendingDialog = null
+                                boardAnimation = null
                                 save(restored)
                             }
                         },
                     )
                     GameButton(
                         label = "新局",
+                        enabled = dialog == null && boardAnimation == null,
                         emphasized = true,
                         modifier = Modifier.weight(1f),
                         onClick = { dialog = DialogKind.RESTART },
@@ -180,6 +229,16 @@ fun Wrist2048Screen() {
 
 @Composable
 private fun Header(game: GameSnapshot) {
+    val shownScore by animateIntAsState(
+        targetValue = game.score,
+        animationSpec = tween(TILE_MOTION_DURATION_MS, easing = FastOutSlowInEasing),
+        label = "score",
+    )
+    val shownBestScore by animateIntAsState(
+        targetValue = game.bestScore,
+        animationSpec = tween(TILE_MOTION_DURATION_MS, easing = FastOutSlowInEasing),
+        label = "best_score",
+    )
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -190,8 +249,8 @@ private fun Header(game: GameSnapshot) {
             Text("滑动合并数字", color = AppColors.Muted, fontSize = 10.sp)
         }
         Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-            ScoreBox("分数", game.score)
-            ScoreBox("最高", game.bestScore)
+            ScoreBox("分数", shownScore)
+            ScoreBox("最高", shownBestScore)
         }
     }
 }
@@ -211,19 +270,24 @@ private fun ScoreBox(label: String, score: Int) {
 }
 
 @Composable
-private fun GameBoard(cells: IntArray, modifier: Modifier, onMove: (Direction) -> Unit) {
+private fun GameBoard(
+    cells: IntArray,
+    animation: BoardAnimation?,
+    modifier: Modifier,
+    onMove: (Direction) -> Unit,
+) {
     val dragOffset = remember { FloatArray(2) }
     BoxWithConstraints(
         modifier = modifier.fillMaxWidth(),
         contentAlignment = Alignment.Center,
     ) {
         val boardSide = minOf(maxWidth, maxHeight)
-        Column(
+        Box(
             modifier = Modifier
                 .size(boardSide)
                 .clip(BoardShape)
                 .background(AppColors.Board)
-                .padding(5.dp)
+                .padding(BoardPadding)
                 .pointerInput(Unit) {
                     detectDragGestures(
                         onDragStart = {
@@ -241,32 +305,124 @@ private fun GameBoard(cells: IntArray, modifier: Modifier, onMove: (Direction) -
                         },
                     )
                 },
-            verticalArrangement = Arrangement.spacedBy(5.dp),
         ) {
-            repeat(BOARD_SIDE) { row ->
-                Row(
-                    modifier = Modifier.weight(1f),
-                    horizontalArrangement = Arrangement.spacedBy(5.dp),
-                ) {
-                    repeat(BOARD_SIDE) { column ->
-                        Tile(
-                            value = cells[row * BOARD_SIDE + column],
-                            modifier = Modifier.weight(1f).fillMaxHeight(),
-                        )
+            val baseCells = animation?.cellsAfterMove ?: cells
+            Column(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(BoardGap),
+            ) {
+                repeat(BOARD_SIDE) { row ->
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        horizontalArrangement = Arrangement.spacedBy(BoardGap),
+                    ) {
+                        repeat(BOARD_SIDE) { column ->
+                            val index = row * BOARD_SIDE + column
+                            Tile(
+                                value = baseCells[index],
+                                hidden = animation != null && hidesBaseTile(index, animation),
+                                modifier = Modifier.weight(1f).fillMaxHeight(),
+                            )
+                        }
                     }
                 }
+            }
+
+            animation?.let { activeAnimation ->
+                AnimatedTileLayer(activeAnimation, boardSide)
             }
         }
     }
 }
 
 @Composable
-private fun Tile(value: Int, modifier: Modifier) {
+private fun AnimatedTileLayer(animation: BoardAnimation, boardSide: Dp) {
+    val progress = remember(animation.id) { Animatable(0f) }
+    LaunchedEffect(animation.id) {
+        progress.animateTo(
+            targetValue = 1f,
+            animationSpec = tween(TILE_MOTION_DURATION_MS, easing = FastOutSlowInEasing),
+        )
+    }
+
+    val tileSide = (boardSide - (BoardPadding * 2) - (BoardGap * (BOARD_SIDE - 1))) / BOARD_SIDE
+    val cellStep = tileSide + BoardGap
+    animation.motions.forEach { motion ->
+        MovingTile(motion, progress.value, tileSide, cellStep)
+    }
+    animation.mergePulses.forEach { pulse ->
+        MergeResultTile(pulse, progress.value, tileSide, cellStep)
+    }
+    if (animation.spawnedIndex >= 0) {
+        SpawnedTile(animation.cellsAfterMove, animation.spawnedIndex, progress.value, tileSide, cellStep)
+    }
+}
+
+@Composable
+private fun MovingTile(motion: TileMotion, progress: Float, tileSide: Dp, cellStep: Dp) {
+    val fromRow = motion.fromIndex / BOARD_SIDE
+    val fromColumn = motion.fromIndex % BOARD_SIDE
+    val toRow = motion.toIndex / BOARD_SIDE
+    val toColumn = motion.toIndex % BOARD_SIDE
+    val movementProgress = if (motion.merges) minOf(progress / 0.72f, 1f) else progress
+    val mergeFade = if (motion.merges) ((progress - 0.68f) / 0.32f).coerceIn(0f, 1f) else 0f
+    val x = cellStep * (fromColumn + (toColumn - fromColumn) * movementProgress)
+    val y = cellStep * (fromRow + (toRow - fromRow) * movementProgress)
+
+    Tile(
+        value = motion.value,
+        modifier = Modifier
+            .offset(x = x, y = y)
+            .size(tileSide)
+            .graphicsLayer(alpha = 1f - mergeFade),
+    )
+}
+
+@Composable
+private fun MergeResultTile(pulse: MergePulse, progress: Float, tileSide: Dp, cellStep: Dp) {
+    val mergeProgress = ((progress - 0.62f) / 0.38f).coerceIn(0f, 1f)
+    val row = pulse.targetIndex / BOARD_SIDE
+    val column = pulse.targetIndex % BOARD_SIDE
+    val easedProgress = FastOutSlowInEasing.transform(mergeProgress)
+    val scale = if (easedProgress < 0.72f) {
+        0.78f + (0.30f * (easedProgress / 0.72f))
+    } else {
+        1.08f - (0.08f * ((easedProgress - 0.72f) / 0.28f))
+    }
+
+    Tile(
+        value = pulse.value,
+        modifier = Modifier
+            .offset(x = cellStep * column, y = cellStep * row)
+            .size(tileSide)
+            .graphicsLayer(alpha = mergeProgress, scaleX = scale, scaleY = scale),
+    )
+}
+
+@Composable
+private fun SpawnedTile(cellsAfterMove: IntArray, index: Int, progress: Float, tileSide: Dp, cellStep: Dp) {
+    val spawnProgress = ((progress - 0.46f) / 0.54f).coerceIn(0f, 1f)
+    val row = index / BOARD_SIDE
+    val column = index % BOARD_SIDE
+    val scale = 0.78f + (0.22f * FastOutSlowInEasing.transform(spawnProgress))
+
+    Tile(
+        value = cellsAfterMove[index],
+        modifier = Modifier
+            .offset(x = cellStep * column, y = cellStep * row)
+            .size(tileSide)
+            .graphicsLayer(alpha = spawnProgress, scaleX = scale, scaleY = scale),
+    )
+}
+
+@Composable
+private fun Tile(value: Int, modifier: Modifier, hidden: Boolean = false) {
     Box(
         modifier = modifier
             .aspectRatio(1f)
             .clip(TileShape)
-            .background(tileColor(value)),
+            .background(tileColor(value))
+            .graphicsLayer(alpha = if (hidden) 0f else 1f),
         contentAlignment = Alignment.Center,
     ) {
         if (value != 0) {
@@ -282,6 +438,38 @@ private fun Tile(value: Int, modifier: Modifier) {
             )
         }
     }
+}
+
+private fun hidesBaseTile(index: Int, animation: BoardAnimation): Boolean {
+    if (animation.spawnedIndex == index) return true
+    for (motion in animation.motions) {
+        if (motion.fromIndex == index || motion.toIndex == index) return true
+    }
+    return false
+}
+
+private fun findSpawnedIndex(cellsAfterMove: IntArray, cellsWithSpawn: IntArray): Int {
+    for (index in cellsAfterMove.indices) {
+        if (cellsAfterMove[index] == 0 && cellsWithSpawn[index] != 0) return index
+    }
+    return -1
+}
+
+private fun mergePulses(motions: Array<TileMotion>): Array<MergePulse> {
+    val candidates = arrayOfNulls<MergePulse>(motions.size / 2)
+    var count = 0
+    for (motion in motions) {
+        if (!motion.merges) continue
+        var duplicate = false
+        for (candidateIndex in 0 until count) {
+            if (candidates[candidateIndex]!!.targetIndex == motion.toIndex) {
+                duplicate = true
+                break
+            }
+        }
+        if (!duplicate) candidates[count++] = MergePulse(motion.value * 2, motion.toIndex)
+    }
+    return Array(count) { candidates[it]!! }
 }
 
 private fun tileColor(value: Int): Color = when (value) {
