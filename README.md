@@ -35,6 +35,10 @@
 
 `app/src/test/java` 包含 2048 的核心规则测试，覆盖单次合并、纵向移动、无路可走判定和本地快照编解码。可通过 Android Studio 的测试运行器执行。
 
+### 获取 release APK
+
+仓库的 **Actions** 页面提供手动触发的 `Build release APK` 工作流。该工作流使用固定版本的 Gradle 与 JDK 17 构建 `assembleRelease`，并上传名为 `shoubiao2048-release-apk` 的 APK 构件。release 变体启用 R8 与资源压缩。本次自动构建会使用临时签名密钥，因此适合首次安装与测试；在长期分发或升级前，请替换为受控的持久发布签名密钥。
+
 ## 项目结构
 
 ```text
