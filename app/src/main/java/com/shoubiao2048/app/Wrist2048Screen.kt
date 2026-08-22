@@ -1,12 +1,19 @@
 package com.shoubiao2048.app
 
 import android.content.res.Configuration
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.animateIntAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -65,8 +72,12 @@ private val BoardShape = RoundedCornerShape(13.dp)
 private val TileShape = RoundedCornerShape(6.dp)
 private val CardShape = RoundedCornerShape(7.dp)
 private val DialogShape = RoundedCornerShape(16.dp)
-private const val TILE_MOTION_DURATION_MS = 148
-private const val TILE_SETTLE_DELAY_MS = 160L
+private const val TILE_MOTION_DURATION_MS = 132
+private const val MERGE_DURATION_MS = 160
+private const val SPAWN_DURATION_MS = 120
+private const val DIALOG_FADE_DURATION_MS = 200
+private const val BUTTON_PRESS_DURATION_MS = 80
+private const val BUTTON_PRESSED_SCALE = 0.96f
 private val BoardPadding = 5.dp
 private val BoardGap = 5.dp
 
@@ -80,6 +91,7 @@ private data class BoardAnimation(
     val motions: Array<TileMotion>,
     val mergePulses: Array<MergePulse>,
     val spawnedIndex: Int,
+    val durationMs: Int,
 )
 
 @Composable
@@ -92,19 +104,68 @@ fun Wrist2048Screen() {
         var dialog by remember { mutableStateOf<DialogKind?>(null) }
         var pendingDialog by remember { mutableStateOf<DialogKind?>(null) }
         var boardAnimation by remember { mutableStateOf<BoardAnimation?>(null) }
+        var queuedDirection by remember { mutableStateOf<Direction?>(null) }
         var animationId by remember { mutableStateOf(0) }
 
         LaunchedEffect(Unit) {
             GameStore.load(context)?.let { game = it }
         }
 
-        LaunchedEffect(boardAnimation?.id) {
+        fun move(direction: Direction) {
+            if (dialog != null) return
             if (boardAnimation != null) {
-                delay(TILE_SETTLE_DELAY_MS)
+                queuedDirection = direction
+                return
+            }
+            val moved = GameEngine.move(game.cells, direction, captureMotions = true)
+            if (!moved.moved) return
+            val cells = GameEngine.addRandomTile(moved.cells)
+            val score = game.score + moved.scoreDelta
+            val bestScore = maxOf(game.bestScore, score)
+            val hasAcknowledgedWin = game.hasAcknowledgedWin
+            val pulses = mergePulses(moved.motions)
+            
+            val next = GameSnapshot(
+                cells = cells,
+                score = score,
+                bestScore = bestScore,
+                hasAcknowledgedWin = hasAcknowledgedWin,
+            )
+            previous = game
+            game = next
+            animationId++
+            boardAnimation = BoardAnimation(
+                id = animationId,
+                cellsAfterMove = moved.cells,
+                motions = moved.motions,
+                mergePulses = pulses,
+                spawnedIndex = findSpawnedIndex(moved.cells, cells),
+                durationMs = if (pulses.isEmpty()) {
+                    TILE_MOTION_DURATION_MS
+                } else {
+                    TILE_MOTION_DURATION_MS + MERGE_DURATION_MS
+                },
+            )
+            save(next)
+            
+            pendingDialog = if (!hasAcknowledgedWin && GameEngine.hasTargetTile(cells)) {
+                DialogKind.WON
+            } else if (!GameEngine.canMove(cells)) {
+                DialogKind.OVER
+            } else null
+        }
+
+        LaunchedEffect(boardAnimation?.id) {
+            val activeAnimation = boardAnimation
+            if (activeAnimation != null) {
+                delay(activeAnimation.durationMs.toLong())
                 boardAnimation = null
                 pendingDialog?.let { nextDialog ->
                     dialog = nextDialog
                     pendingDialog = null
+                } ?: queuedDirection?.let { nextDirection ->
+                    queuedDirection = null
+                    move(nextDirection)
                 }
             }
         }
@@ -120,41 +181,8 @@ fun Wrist2048Screen() {
             dialog = null
             pendingDialog = null
             boardAnimation = null
+            queuedDirection = null
             save(next)
-        }
-
-        fun move(direction: Direction) {
-            if (dialog != null || boardAnimation != null) return
-            val moved = GameEngine.move(game.cells, direction, captureMotions = true)
-            if (!moved.moved) return
-            val cells = GameEngine.addRandomTile(moved.cells)
-            val score = game.score + moved.scoreDelta
-            val bestScore = maxOf(game.bestScore, score)
-            val hasAcknowledgedWin = game.hasAcknowledgedWin
-            
-            val next = GameSnapshot(
-                cells = cells,
-                score = score,
-                bestScore = bestScore,
-                hasAcknowledgedWin = hasAcknowledgedWin,
-            )
-            previous = game
-            game = next
-            animationId++
-            boardAnimation = BoardAnimation(
-                id = animationId,
-                cellsAfterMove = moved.cells,
-                motions = moved.motions,
-                mergePulses = mergePulses(moved.motions),
-                spawnedIndex = findSpawnedIndex(moved.cells, cells),
-            )
-            save(next)
-            
-            pendingDialog = if (!hasAcknowledgedWin && GameEngine.hasTargetTile(cells)) {
-                DialogKind.WON
-            } else if (!GameEngine.canMove(cells)) {
-                DialogKind.OVER
-            } else null
         }
 
         val configuration = LocalConfiguration.current
@@ -194,6 +222,7 @@ fun Wrist2048Screen() {
                                 previous = null
                                 pendingDialog = null
                                 boardAnimation = null
+                                queuedDirection = null
                                 save(restored)
                             }
                         },
@@ -208,20 +237,30 @@ fun Wrist2048Screen() {
                 }
             }
 
-            dialog?.let { activeDialog ->
-                GameDialog(
-                    kind = activeDialog,
-                    onContinue = {
-                        if (activeDialog == DialogKind.WON) {
-                            val next = game.copy(hasAcknowledgedWin = true)
-                            game = next
-                            save(next)
-                        }
-                        dialog = null
-                    },
-                    onRestart = ::newGame,
-                    onDismiss = { dialog = null },
-                )
+            AnimatedContent(
+                targetState = dialog,
+                transitionSpec = {
+                    fadeIn(tween(DIALOG_FADE_DURATION_MS, easing = FastOutSlowInEasing)) togetherWith
+                        fadeOut(tween(DIALOG_FADE_DURATION_MS, easing = FastOutSlowInEasing))
+                },
+                modifier = Modifier.fillMaxSize(),
+                label = "game_dialog",
+            ) { activeDialog ->
+                activeDialog?.let { currentDialog ->
+                    GameDialog(
+                        kind = currentDialog,
+                        onContinue = {
+                            if (currentDialog == DialogKind.WON) {
+                                val next = game.copy(hasAcknowledgedWin = true)
+                                game = next
+                                save(next)
+                            }
+                            dialog = null
+                        },
+                        onRestart = ::newGame,
+                        onDismiss = { dialog = null },
+                    )
+                }
             }
         }
     }
@@ -341,31 +380,31 @@ private fun AnimatedTileLayer(animation: BoardAnimation, boardSide: Dp) {
     LaunchedEffect(animation.id) {
         progress.animateTo(
             targetValue = 1f,
-            animationSpec = tween(TILE_MOTION_DURATION_MS, easing = FastOutSlowInEasing),
+            animationSpec = tween(animation.durationMs, easing = FastOutSlowInEasing),
         )
     }
 
     val tileSide = (boardSide - (BoardPadding * 2) - (BoardGap * (BOARD_SIDE - 1))) / BOARD_SIDE
     val cellStep = tileSide + BoardGap
     animation.motions.forEach { motion ->
-        MovingTile(motion, progress.value, tileSide, cellStep)
+        MovingTile(motion, progress.value, animation.durationMs, tileSide, cellStep)
     }
     animation.mergePulses.forEach { pulse ->
-        MergeResultTile(pulse, progress.value, tileSide, cellStep)
+        MergeResultTile(pulse, progress.value, animation.durationMs, tileSide, cellStep)
     }
     if (animation.spawnedIndex >= 0) {
-        SpawnedTile(animation.cellsAfterMove, animation.spawnedIndex, progress.value, tileSide, cellStep)
+        SpawnedTile(animation.cellsAfterMove, animation.spawnedIndex, progress.value, animation.durationMs, tileSide, cellStep)
     }
 }
 
 @Composable
-private fun MovingTile(motion: TileMotion, progress: Float, tileSide: Dp, cellStep: Dp) {
+private fun MovingTile(motion: TileMotion, progress: Float, durationMs: Int, tileSide: Dp, cellStep: Dp) {
     val fromRow = motion.fromIndex / BOARD_SIDE
     val fromColumn = motion.fromIndex % BOARD_SIDE
     val toRow = motion.toIndex / BOARD_SIDE
     val toColumn = motion.toIndex % BOARD_SIDE
-    val movementProgress = if (motion.merges) minOf(progress / 0.72f, 1f) else progress
-    val mergeFade = if (motion.merges) ((progress - 0.68f) / 0.32f).coerceIn(0f, 1f) else 0f
+    val movementProgress = (progress * durationMs / TILE_MOTION_DURATION_MS).coerceIn(0f, 1f)
+    val mergeFade = if (motion.merges) ((movementProgress - 0.88f) / 0.12f).coerceIn(0f, 1f) else 0f
     val x = cellStep * (fromColumn + (toColumn - fromColumn) * movementProgress)
     val y = cellStep * (fromRow + (toRow - fromRow) * movementProgress)
 
@@ -379,15 +418,18 @@ private fun MovingTile(motion: TileMotion, progress: Float, tileSide: Dp, cellSt
 }
 
 @Composable
-private fun MergeResultTile(pulse: MergePulse, progress: Float, tileSide: Dp, cellStep: Dp) {
-    val mergeProgress = ((progress - 0.62f) / 0.38f).coerceIn(0f, 1f)
+private fun MergeResultTile(pulse: MergePulse, progress: Float, durationMs: Int, tileSide: Dp, cellStep: Dp) {
+    val mergeStart = TILE_MOTION_DURATION_MS.toFloat() / durationMs
+    val mergeProgress = ((progress - mergeStart) / (1f - mergeStart)).coerceIn(0f, 1f)
     val row = pulse.targetIndex / BOARD_SIDE
     val column = pulse.targetIndex % BOARD_SIDE
     val easedProgress = FastOutSlowInEasing.transform(mergeProgress)
-    val scale = if (easedProgress < 0.72f) {
-        0.78f + (0.30f * (easedProgress / 0.72f))
+    val scale = if (easedProgress < 0.18f) {
+        1f - (0.06f * (easedProgress / 0.18f))
+    } else if (easedProgress < 0.66f) {
+        0.94f + (0.14f * ((easedProgress - 0.18f) / 0.48f))
     } else {
-        1.08f - (0.08f * ((easedProgress - 0.72f) / 0.28f))
+        1.08f - (0.08f * ((easedProgress - 0.66f) / 0.34f))
     }
 
     Tile(
@@ -400,11 +442,14 @@ private fun MergeResultTile(pulse: MergePulse, progress: Float, tileSide: Dp, ce
 }
 
 @Composable
-private fun SpawnedTile(cellsAfterMove: IntArray, index: Int, progress: Float, tileSide: Dp, cellStep: Dp) {
-    val spawnProgress = ((progress - 0.46f) / 0.54f).coerceIn(0f, 1f)
+private fun SpawnedTile(cellsAfterMove: IntArray, index: Int, progress: Float, durationMs: Int, tileSide: Dp, cellStep: Dp) {
+    val spawnStartMs = maxOf(0, TILE_MOTION_DURATION_MS - SPAWN_DURATION_MS)
+    val spawnStart = spawnStartMs.toFloat() / durationMs
+    val spawnEnd = (spawnStartMs + SPAWN_DURATION_MS).toFloat() / durationMs
+    val spawnProgress = ((progress - spawnStart) / (spawnEnd - spawnStart)).coerceIn(0f, 1f)
     val row = index / BOARD_SIDE
     val column = index % BOARD_SIDE
-    val scale = 0.78f + (0.22f * FastOutSlowInEasing.transform(spawnProgress))
+    val scale = 0.80f + (0.20f * FastOutSlowInEasing.transform(spawnProgress))
 
     Tile(
         value = cellsAfterMove[index],
@@ -505,10 +550,20 @@ private fun GameButton(
     emphasized: Boolean = false,
     onClick: () -> Unit,
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (enabled && pressed) BUTTON_PRESSED_SCALE else 1f,
+        animationSpec = tween(BUTTON_PRESS_DURATION_MS, easing = FastOutSlowInEasing),
+        label = "button_scale",
+    )
     Button(
         onClick = onClick,
         enabled = enabled,
-        modifier = modifier.height(42.dp),
+        modifier = modifier
+            .height(42.dp)
+            .graphicsLayer(scaleX = scale, scaleY = scale),
+        interactionSource = interactionSource,
         colors = ButtonDefaults.buttonColors(
             backgroundColor = if (emphasized) AppColors.Accent else AppColors.Board,
             contentColor = if (emphasized) Color(0xFF312B26) else AppColors.Ink,
