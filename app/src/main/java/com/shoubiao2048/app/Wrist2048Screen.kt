@@ -111,6 +111,10 @@ fun Wrist2048Screen() {
             GameStore.load(context)?.let { game = it }
         }
 
+        fun save(snapshot: GameSnapshot) {
+            scope.launch { GameStore.save(context, snapshot) }
+        }
+
         fun move(direction: Direction) {
             if (dialog != null) return
             if (boardAnimation != null) {
@@ -168,10 +172,6 @@ fun Wrist2048Screen() {
                     move(nextDirection)
                 }
             }
-        }
-
-        fun save(snapshot: GameSnapshot) {
-            scope.launch { GameStore.save(context, snapshot) }
         }
 
         fun newGame() {
